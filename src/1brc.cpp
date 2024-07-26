@@ -35,17 +35,86 @@ void operator delete( void* ptr, [[maybe_unused]] std::size_t size ) noexcept
 }
 */
 
+// <mask, data>
+// If the mask bit is 1 then it MUST be the data bit
+constexpr std::array< std::tuple< std::uint8_t, std::uint8_t >, 4 > UTF8_BITMASKS {
+	{ { std::uint8_t( 0b1000'0000 ), std::uint8_t( 0b0000'0000 ) },
+	  { std::uint8_t( 0b1110'0000 ), std::uint8_t( 0b1100'0000 ) },
+	  { std::uint8_t( 0b1111'0000 ), std::uint8_t( 0b1110'0000 ) },
+	  { std::uint8_t( 0b1111'1000 ), std::uint8_t( 0b1111'0000 ) } }
+};
+
+consteval std::size_t getUTF8CharacterCount()
+{
+	std::size_t counter { 0 };
+	for ( std::int8_t i = std::numeric_limits< std::int8_t >::min(); i < std::numeric_limits< std::int8_t >::max();
+	      ++i )
+	{
+		for ( const auto& [ mask, data ] : UTF8_BITMASKS )
+		{
+			// If it matches a single mask then we will use it
+
+			if ( ( i & mask ) == data )
+			{
+				++counter;
+				break;
+			}
+		}
+	}
+
+	// Since the max number (255) isn't actually counted. We need to add 1 more to the final counter
+	return counter + 1;
+}
+
+consteval std::array< std::uint8_t, getUTF8CharacterCount() > generateUTF8Characters()
+{
+	std::array< std::uint8_t, getUTF8CharacterCount() > array {};
+
+	std::size_t counter { 0 };
+
+	for ( std::int8_t i = std::numeric_limits< std::int8_t >::min(); i < std::numeric_limits< std::int8_t >::max();
+	      ++i )
+	{
+		for ( const auto& [ mask, data ] : UTF8_BITMASKS )
+		{
+			// If it matches a single mask then we will use it
+
+			if ( ( i & mask ) == data )
+			{
+				array[ counter ] = i;
+				++counter;
+				break;
+			}
+		}
+
+		// Add the final max character if it will fit
+		if ( counter + 1 < array.size() ) array[ counter + 1 ] = std::numeric_limits< std::int8_t >::max();
+	}
+
+	return array;
+}
+
+constexpr std::array< std::uint8_t, getUTF8CharacterCount() > UTF8_CHARACTERS { generateUTF8Characters() };
+
+
+
 struct City
 {
 	std::string_view name;
-	float min { std::numeric_limits< float >::infinity() };
-	float max { -std::numeric_limits< float >::infinity() };
-	float total { 0 };
+
+	using minmaxType = std::int_fast16_t;
+	using TempType = std::int_fast16_t;
+
+	minmaxType min { std::numeric_limits< minmaxType >::max() };
+	minmaxType max { std::numeric_limits< minmaxType >::min() };
+
+	std::int32_t total { 0 };
+
 	std::uint_fast32_t num { 0 };
 
 	explicit City( const std::string_view city_name ) : name( city_name ) {}
 
-	FGL_FLATTEN_HOT_INLINE void add_value( const float temp )
+	FGL_FLATTEN_HOT_INLINE void add_value( const TempType temp )
 	{
 		max = std::max( max, temp );
 		min = std::min( min, temp );
@@ -75,7 +144,11 @@ struct Bucket
 {
 	unordered_map< std::string_view, City > bucket {};
 
-	Bucket() { bucket.reserve( 1024 ); }
+	Bucket()
+	{
+		// At most we will expect 10,000 unique city names
+		bucket.reserve( 10'000 );
+	}
 
 	FGL_FLATTEN_HOT_INLINE void parse_record( const Record& R )
 	{
